@@ -66,6 +66,8 @@ pub mod window_frame;
 pub mod window_function;
 pub mod window_state;
 
+pub use accumulator::Accumulator;
+pub use accumulator::SerializableAccumulator;
 pub use built_in_window_function::BuiltInWindowFunction;
 pub use datafusion_expr_common::accumulator::Accumulator;
 pub use datafusion_expr_common::columnar_value::ColumnarValue;
