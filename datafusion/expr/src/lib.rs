@@ -64,6 +64,7 @@ pub mod window_function;
 pub mod window_state;
 
 pub use accumulator::Accumulator;
+pub use accumulator::SerializableAccumulator;
 pub use aggregate_function::AggregateFunction;
 pub use built_in_window_function::BuiltInWindowFunction;
 pub use columnar_value::ColumnarValue;
