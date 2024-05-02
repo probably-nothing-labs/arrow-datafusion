@@ -95,7 +95,7 @@ pub const UNNAMED_TABLE: &str = "?table?";
 /// ```
 #[derive(Debug, Clone)]
 pub struct LogicalPlanBuilder {
-    plan: LogicalPlan,
+    pub plan: LogicalPlan,
 }
 
 impl LogicalPlanBuilder {
@@ -1290,7 +1290,7 @@ pub fn build_join_schema(
 ///
 /// This allows MySQL style selects like
 /// `SELECT col FROM t WHERE pk = 5` if col is unique
-fn add_group_by_exprs_from_dependencies(
+pub fn add_group_by_exprs_from_dependencies(
     mut group_expr: Vec<Expr>,
     schema: &DFSchemaRef,
 ) -> Result<Vec<Expr>> {
