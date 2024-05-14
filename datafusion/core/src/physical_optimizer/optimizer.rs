@@ -24,6 +24,7 @@ use super::projection_pushdown::ProjectionPushdown;
 use crate::config::ConfigOptions;
 use crate::physical_optimizer::aggregate_statistics::AggregateStatistics;
 use crate::physical_optimizer::coalesce_batches::CoalesceBatches;
+use crate::physical_optimizer::coalesce_before_streaming_window_aggregate::CoaslesceBeforeStreamingAggregate;
 use crate::physical_optimizer::combine_partial_final_agg::CombinePartialFinalAggregate;
 use crate::physical_optimizer::enforce_distribution::EnforceDistribution;
 use crate::physical_optimizer::enforce_sorting::EnforceSorting;
@@ -101,7 +102,7 @@ impl PhysicalOptimizer {
             // ordering. Please make sure that the whole plan tree is determined before this rule.
             // Note that one should always run this rule after running the EnforceDistribution rule
             // as the latter may break local sorting requirements.
-            //Arc::new(EnforceSorting::new()), ##### TODO: This is being temporarily disabled.
+            Arc::new(EnforceSorting::new()),
             // Run once after the local sorting requirement is changed
             Arc::new(OptimizeAggregateOrder::new()),
             // TODO: `try_embed_to_hash_join` in the ProjectionPushdown rule would be block by the CoalesceBatches, so add it before CoalesceBatches. Maybe optimize it in the future.
@@ -129,6 +130,10 @@ impl PhysicalOptimizer {
             // are not present, the load of executors such as join or union will be
             // reduced by narrowing their input tables.
             Arc::new(ProjectionPushdown::new()),
+            // Franz optimizer rule, added to ensure coalescing of partitions before a global aggregate
+            // window. This rule may be removed once we have support for two stage partial and final
+            // aggregates a la vanilla Datafusion.
+            Arc::new(CoaslesceBeforeStreamingAggregate::new()),
         ];
 
         Self::with_rules(rules)

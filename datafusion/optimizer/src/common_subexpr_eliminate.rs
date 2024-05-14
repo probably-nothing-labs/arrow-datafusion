@@ -268,6 +268,7 @@ impl CommonSubexprEliminate {
         &self,
         aggregate: &Aggregate,
         config: &dyn OptimizerConfig,
+        plan: &LogicalPlan,
     ) -> Result<LogicalPlan> {
         let Aggregate {
             group_expr,
@@ -317,8 +318,15 @@ impl CommonSubexprEliminate {
                 })
                 .collect::<Result<Vec<Expr>>>()?;
             // Since group_epxr changes, schema changes also. Use try_new method.
-            Aggregate::try_new(Arc::new(new_input), new_group_expr, new_aggr_expr)
-                .map(LogicalPlan::Aggregate)
+            let inner_agg =
+                Aggregate::try_new(Arc::new(new_input), new_group_expr, new_aggr_expr);
+            if let LogicalPlan::StreamingWindow(_, window_length) = plan {
+                inner_agg.map(|new_aggr| {
+                    LogicalPlan::StreamingWindow(new_aggr, window_length.clone())
+                })
+            } else {
+                inner_agg.map(LogicalPlan::Aggregate)
+            }
         } else {
             let mut agg_exprs = vec![];
 
@@ -358,11 +366,14 @@ impl CommonSubexprEliminate {
                 }
             }
 
-            let agg = LogicalPlan::Aggregate(Aggregate::try_new(
-                Arc::new(new_input),
-                new_group_expr,
-                agg_exprs,
-            )?);
+            let inner_agg =
+                Aggregate::try_new(Arc::new(new_input), new_group_expr, agg_exprs)?;
+
+            let agg = if let LogicalPlan::StreamingWindow(_, window_length) = plan {
+                LogicalPlan::StreamingWindow(inner_agg, window_length.clone())
+            } else {
+                LogicalPlan::Aggregate(inner_agg)
+            };
 
             Ok(LogicalPlan::Projection(Projection::try_new(
                 proj_exprs,
@@ -405,8 +416,9 @@ impl OptimizerRule for CommonSubexprEliminate {
             LogicalPlan::Window(window) => {
                 Some(self.try_optimize_window(window, config)?)
             }
-            LogicalPlan::Aggregate(aggregate) => {
-                Some(self.try_optimize_aggregate(aggregate, config)?)
+            LogicalPlan::Aggregate(aggregate)
+            | LogicalPlan::StreamingWindow(aggregate, _) => {
+                Some(self.try_optimize_aggregate(aggregate, config, plan)?)
             }
             LogicalPlan::Join(_)
             | LogicalPlan::CrossJoin(_)

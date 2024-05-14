@@ -1,8 +1,8 @@
 use core::slice;
 use std::io::Cursor;
-use std::{collections::HashMap, io::BufWriter, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
-use apache_avro::{from_avro_datum, types::Value, Error, Schema as AvSchema, Writer};
+use apache_avro::{types::Value, Error, Schema as AvSchema};
 use arrow::array::{Array, ListArray, StringBuilder, StructArray};
 use arrow::array::{
     BooleanBuilder, Float32Builder, Float64Builder, Int32Builder, Int64Builder,
@@ -126,8 +126,6 @@ pub fn json_to_avro_value(
             }
             _ => Err("JSON object encountered, but schema is not a Record".to_string()),
         },
-        // @TODO: analyzer says this is unreachable, is that true?
-        _ => Err("Unsupported JSON type for Avro conversion".to_string()),
     }
 }
 
