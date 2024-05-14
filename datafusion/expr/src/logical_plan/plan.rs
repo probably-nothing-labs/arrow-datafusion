@@ -158,6 +158,8 @@ pub enum LogicalPlan {
     Unnest(Unnest),
     /// A variadic query (e.g. "Recursive CTEs")
     RecursiveQuery(RecursiveQuery),
+
+    StreamingWindow(Aggregate),
 }
 
 impl LogicalPlan {
@@ -199,6 +201,7 @@ impl LogicalPlan {
                 // we take the schema of the static term as the schema of the entire recursive query
                 static_term.schema()
             }
+            LogicalPlan::StreamingWindow(Aggregate { schema, .. }) => schema,
         }
     }
 
@@ -351,6 +354,7 @@ impl LogicalPlan {
             | LogicalPlan::EmptyRelation { .. }
             | LogicalPlan::Values { .. }
             | LogicalPlan::DescribeTable(_) => vec![],
+            LogicalPlan::StreamingWindow(Aggregate { input, .. }) => vec![input],
         }
     }
 
@@ -458,6 +462,13 @@ impl LogicalPlan {
             | LogicalPlan::Ddl(_)
             | LogicalPlan::DescribeTable(_)
             | LogicalPlan::Unnest(_) => Ok(None),
+            LogicalPlan::StreamingWindow(agg) => {
+                if agg.group_expr.is_empty() {
+                    Ok(Some(agg.aggr_expr.as_slice()[0].clone()))
+                } else {
+                    Ok(Some(agg.group_expr.as_slice()[0].clone()))
+                }
+            }
         }
     }
 
@@ -813,6 +824,13 @@ impl LogicalPlan {
                 let input = inputs.swap_remove(0);
                 unnest_with_options(input, columns.clone(), options.clone())
             }
+            LogicalPlan::StreamingWindow(Aggregate { group_expr, .. }) => {
+                // group exprs are the first expressions
+                let agg_expr = expr.split_off(group_expr.len());
+
+                Aggregate::try_new(Arc::new(inputs.swap_remove(0)), expr, agg_expr)
+                    .map(LogicalPlan::StreamingWindow)
+            }
         }
     }
     /// Replaces placeholder param values (like `$1`, `$2`) in [`LogicalPlan`]
@@ -987,6 +1005,19 @@ impl LogicalPlan {
             | LogicalPlan::Prepare(_)
             | LogicalPlan::Statement(_)
             | LogicalPlan::Extension(_) => None,
+            LogicalPlan::StreamingWindow(Aggregate {
+                input, group_expr, ..
+            }) => {
+                // Empty group_expr will return Some(1)
+                if group_expr
+                    .iter()
+                    .all(|expr| matches!(expr, Expr::Literal(_)))
+                {
+                    Some(1)
+                } else {
+                    input.max_rows()
+                }
+            }
         }
     }
 
@@ -1544,6 +1575,16 @@ impl LogicalPlan {
                     LogicalPlan::Unnest(Unnest { columns, .. }) => {
                         write!(f, "Unnest: {}", expr_vec_fmt!(columns))
                     }
+                    LogicalPlan::StreamingWindow(Aggregate {
+                        ref group_expr,
+                        ref aggr_expr,
+                        ..
+                    }) => write!(
+                        f,
+                        "StreamingWindow: groupBy=[[{}]], aggr=[[{}]]",
+                        expr_vec_fmt!(group_expr),
+                        expr_vec_fmt!(aggr_expr)
+                    ),
                 }
             }
         }

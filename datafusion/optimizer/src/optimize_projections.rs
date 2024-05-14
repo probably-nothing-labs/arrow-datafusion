@@ -210,7 +210,7 @@ fn optimize_projections(
                 rewrite_projection_given_requirements(proj, config, indices)
             };
         }
-        LogicalPlan::Aggregate(aggregate) => {
+        LogicalPlan::Aggregate(aggregate) | LogicalPlan::StreamingWindow(aggregate) => {
             // Split parent requirements to GROUP BY and aggregate sections:
             let n_group_exprs = aggregate.group_expr_len()?;
             let (group_by_reqs, mut aggregate_reqs): (Vec<usize>, Vec<usize>) =
@@ -263,8 +263,16 @@ fn optimize_projections(
 
             let all_exprs_iter = new_group_bys.iter().chain(new_aggr_expr.iter());
             let schema = aggregate.input.schema();
-            let necessary_indices = indices_referred_by_exprs(schema, all_exprs_iter)?;
+            let mut necessary_indices =
+                indices_referred_by_exprs(schema, all_exprs_iter)?;
 
+            //TODO: This is a bit of a hack to make sure canonical timestamps aren't erase by the optimizer.
+            //      Ideally we want to have a concept of canonical timestamps that optimizer rules are aware of and
+            //      thus don't mess with them.
+            let col = schema
+                .index_of_column_by_name(None, "franz_canonical_timestamp")
+                .unwrap();
+            necessary_indices.push(col);
             let aggregate_input = if let Some(input) =
                 optimize_projections(&aggregate.input, config, &necessary_indices)?
             {
@@ -278,17 +286,24 @@ fn optimize_projections(
             // the aggregate expressions. Note that necessary_indices refer to
             // fields in `aggregate.input.schema()`.
             let necessary_exprs = get_required_exprs(schema, &necessary_indices);
+
             let (aggregate_input, _) =
                 add_projection_on_top_if_helpful(aggregate_input, necessary_exprs)?;
 
             // Create a new aggregate plan with the updated input and only the
             // absolutely necessary fields:
-            return Aggregate::try_new(
+            let inner_agg = Aggregate::try_new(
                 Arc::new(aggregate_input),
                 new_group_bys,
                 new_aggr_expr,
-            )
-            .map(|aggregate| Some(LogicalPlan::Aggregate(aggregate)));
+            );
+            if let LogicalPlan::StreamingWindow(_) = plan {
+                return inner_agg
+                    .map(|aggregate| Some(LogicalPlan::StreamingWindow(aggregate)));
+            } else {
+                return inner_agg
+                    .map(|aggregate| Some(LogicalPlan::Aggregate(aggregate)));
+            }
         }
         LogicalPlan::Window(window) => {
             // Split parent requirements to child and window expression sections:
