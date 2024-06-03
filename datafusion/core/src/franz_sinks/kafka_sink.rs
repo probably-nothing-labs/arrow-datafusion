@@ -19,11 +19,10 @@ use async_trait::async_trait;
 use std::time::Duration;
 
 use crate::error::{DataFusionError, Result};
-use arrow::record_batch::RecordBatch;
 use arrow::json::LineDelimitedWriter;
+use arrow::record_batch::RecordBatch;
 
 use rdkafka::config::ClientConfig;
-use rdkafka::producer::future_producer::OwnedDeliveryResult;
 use rdkafka::producer::FutureProducer;
 use rdkafka::producer::FutureRecord;
 
@@ -35,6 +34,23 @@ pub struct KafkaSinkSettings {
     pub topic: String,
 }
 
+impl Default for KafkaSinkSettings {
+    fn default() -> Self {
+        KafkaSinkSettings {
+            bootstrap_servers: "".to_string(),
+            topic: "".to_string(),
+        }
+    }
+}
+
+impl KafkaSinkSettings {
+    pub fn new() -> Self {
+        KafkaSinkSettings {
+            ..Default::default()
+        }
+    }
+}
+
 pub struct KafkaSink {
     config: KafkaSinkSettings,
     producer: FutureProducer,
@@ -42,11 +58,20 @@ pub struct KafkaSink {
 
 impl KafkaSink {
     pub fn new(config: &KafkaSinkSettings) -> Result<Self> {
-        let producer: FutureProducer = ClientConfig::new()
+        let mut client_config = ClientConfig::new();
+
+        client_config
             .set("bootstrap.servers", config.bootstrap_servers.as_str())
-            .set("message.timeout.ms", "5000")
-            .create()
-            .expect("Producer creation error");
+            .set("message.timeout.ms", "5000");
+
+        let producer: FutureProducer =
+            client_config.create().expect("Producer creation error");
+
+        log::info!(
+            "kafka connection established bootstrap_servers: {}, topic: {}",
+            config.bootstrap_servers,
+            config.topic
+        );
 
         Ok(Self {
             config: config.clone(),
@@ -58,23 +83,23 @@ impl KafkaSink {
 #[async_trait]
 impl FranzSink for KafkaSink {
     async fn write_records(&mut self, batch: RecordBatch) -> Result<(), DataFusionError> {
-        if batch.num_rows() > 0 {
-            let topic = self.config.topic.as_str();
+        let topic = self.config.topic.as_str();
 
-            let buf = Vec::new();
-            let mut writer = LineDelimitedWriter::new(buf);
-            writer.write_batches(&vec![&batch]).unwrap();
-            writer.finish().unwrap();
-            let buf = writer.into_inner();
+        let buf = Vec::new();
+        let mut writer = LineDelimitedWriter::new(buf);
+        writer.write_batches(&vec![&batch]).unwrap();
+        writer.finish().unwrap();
+        let buf = writer.into_inner();
 
-            let record = FutureRecord::<[u8], _>::to(topic).payload(&buf);
-                    // .key(key.as_str()),
+        let record = FutureRecord::<[u8], _>::to(topic).payload(&buf);
+        // .key(key.as_str()),
 
-            let _delivery_status = self
-                .producer
-                .send(record, Duration::from_secs(0))
-                .await;
-        }
+        let _delivery_status = self
+            .producer
+            .send(record, Duration::from_secs(0))
+            .await
+            .expect("Message not delivered");
+
         Ok(())
     }
 }

@@ -62,6 +62,7 @@ datafusion-expr = { workspace = true }
 datafusion-optimizer = { workspace = true, default-features = true }
 datafusion-physical-expr = { workspace = true, default-features = true }
 datafusion-sql = { workspace = true }
+datafusion-franz = { workspace = true }
 env_logger = { workspace = true }
 futures = { workspace = true }
 log = { workspace = true }
@@ -84,3 +85,4 @@ arrow-json = "51.0.0"
 base64 = "0.22.0"
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
+tracing-log = "0.2.0"

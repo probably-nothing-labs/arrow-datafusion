@@ -47,8 +47,8 @@ use datafusion_common::{
     franz_arrow::infer_arrow_schema_from_json_value, plan_err, ScalarValue,
 };
 use datafusion_expr::{
-    col, create_udwf, ident, max, min, Expr, LogicalPlanBuilder, PartitionEvaluator,
-    TableType, Volatility, WindowFrame,
+    col, count, create_udwf, ident, max, min, Expr, LogicalPlanBuilder,
+    PartitionEvaluator, TableType, Volatility, WindowFrame,
 };
 
 use datafusion::execution::SendableRecordBatchStream;
@@ -63,8 +63,10 @@ use tracing_subscriber::{fmt::format::FmtSpan, FmtSubscriber};
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
+    tracing_log::LogTracer::init().expect("Failed to set up log tracer");
+
     let subscriber = FmtSubscriber::builder()
-        .with_max_level(tracing::Level::WARN)
+        .with_max_level(tracing::Level::DEBUG)
         .with_span_events(FmtSpan::CLOSE | FmtSpan::ENTER)
         .finish();
     tracing::subscriber::set_global_default(subscriber)
@@ -113,12 +115,13 @@ async fn main() {
         )),
     );
 
-    let bootstrap_servers = String::from("localhost:19092,localhost:29092,localhost:39092");
+    let bootstrap_servers =
+        String::from("localhost:19092,localhost:29092,localhost:39092");
     let canonical_schema = Arc::new(Schema::new(fields));
     let _config = KafkaStreamConfig {
         bootstrap_servers: bootstrap_servers.clone(),
         topic: String::from("driver-imu-data"),
-        consumer_group_id: String::from("my_test_consumer"),
+        consumer_group_id: String::from("kafka_rideshare"),
         original_schema: Arc::new(inferred_schema),
         schema: canonical_schema,
         batch_size: 10,
@@ -157,6 +160,7 @@ async fn main() {
             vec![
                 max(col("imu_measurement").field("gps").field("speed")),
                 min(col("imu_measurement").field("gps").field("altitude")),
+                count(col("imu_measurement")).alias("count"),
             ],
             Duration::from_millis(2000),
         )
@@ -165,8 +169,10 @@ async fn main() {
     // print_stream(&windowed_df).await;
 
     use datafusion::franz_sinks::{
-        FileSink, FranzSink, KafkaSink, PrettyPrinter, StdoutSink, KafkaSinkSettings,
+        FileSink, FranzSink, KafkaSink, KafkaSinkSettings, PrettyPrinter, StdoutSink,
     };
+
+    use datafusion_franz::{StreamMonitor, StreamMonitorConfig};
 
     // let fname = "/tmp/out.jsonl";
     // println!("Writing results to file {}", fname);
@@ -182,12 +188,29 @@ async fn main() {
     // let sink = Box::new(writer) as Box<dyn FranzSink>;
     // let _ = windowed_df.sink(sink).await;
 
-    let config = KafkaSinkSettings {
-        topic: "out_topic".to_string(),
+    // let config = KafkaSinkSettings {
+    //     topic: "out_topic".to_string(),
+    //     bootstrap_servers: bootstrap_servers.clone(),
+    // };
+    // let writer = KafkaSink::new(&config).unwrap();
+    // let sink = Box::new(writer) as Box<dyn FranzSink>;
+    // let _ = windowed_df.sink(sink).await;
+
+    let kafka_sink_config = KafkaSinkSettings {
+        topic: "out_topic_monitored".to_string(),
         bootstrap_servers: bootstrap_servers.clone(),
     };
-    let writer = KafkaSink::new(&config).unwrap();
-    let sink = Box::new(writer) as Box<dyn FranzSink>;
+    let kafka_writer = KafkaSink::new(&kafka_sink_config).unwrap();
+
+    let stream_monitor_config = StreamMonitorConfig::new();
+    let stream_monitor = StreamMonitor::new(
+        &stream_monitor_config,
+        Arc::new(tokio::sync::Mutex::new(kafka_writer)),
+    )
+    .unwrap();
+    stream_monitor.start_server().await;
+
+    let sink = Box::new(stream_monitor) as Box<dyn FranzSink>;
     let _ = windowed_df.sink(sink).await;
 }
 
@@ -275,11 +298,11 @@ impl StreamTable {
         let mut partition_streams = Vec::with_capacity(self.0.partitions as usize);
 
         for part in 0..self.0.partitions {
-            let my_struct = Arc::new(KafkaStreamRead {
+            let read_stream = Arc::new(KafkaStreamRead {
                 config: self.0.clone(),
                 assigned_partitions: vec![part],
             });
-            partition_streams.push(my_struct as _);
+            partition_streams.push(read_stream as _);
         }
 
         Ok(Arc::new(StreamingTableExec::try_new(

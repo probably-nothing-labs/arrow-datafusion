@@ -16,53 +16,36 @@
 // under the License.
 
 use async_trait::async_trait;
-
-use crate::error::{DataFusionError, Result};
-use arrow::json::LineDelimitedWriter;
+use datafusion::error::{DataFusionError, Result};
+use datafusion::franz_sinks::FranzSink;
 use arrow::record_batch::RecordBatch;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
-use super::sink::FranzSink;
+#[derive(Debug, Default)]
+pub struct MockSink {
+    // Store the number of times write_records is called
+    pub write_count: AtomicUsize,
+    // Store the batches written
+    pub batches: Arc<Mutex<Vec<RecordBatch>>>,
+}
 
-pub struct StdoutSink {}
-
-impl StdoutSink {
-    pub fn new() -> Result<Self> {
-        Ok(Self {})
+impl MockSink {
+    pub fn new() -> Self {
+        MockSink {
+            write_count: AtomicUsize::new(0),
+            batches: Arc::new(Mutex::new(Vec::new())),
+        }
     }
 }
 
 #[async_trait]
-impl FranzSink for StdoutSink {
+impl FranzSink for MockSink {
     async fn write_records(&mut self, batch: RecordBatch) -> Result<(), DataFusionError> {
-        // Write out JSON
-        let mut writer = LineDelimitedWriter::new(std::io::stdout().lock());
-        let _ = writer.write(&batch).map_err(|e| {
-            DataFusionError::Execution(format!("Error writing batch: {}", e))
-        })?;
-
+        self.write_count.fetch_add(1, Ordering::SeqCst);
+        let mut batches = self.batches.lock().await;
+        batches.push(batch);
         Ok(())
     }
 }
-
-pub struct PrettyPrinter {}
-
-impl PrettyPrinter {
-    pub fn new() -> Result<Self> {
-        Ok(Self {})
-    }
-}
-
-#[async_trait]
-impl FranzSink for PrettyPrinter {
-    async fn write_records(&mut self, batch: RecordBatch) -> Result<(), DataFusionError> {
-        println!(
-            "{}",
-            arrow::util::pretty::pretty_format_batches(&[batch]).unwrap()
-        );
-
-        Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {}
