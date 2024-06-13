@@ -160,7 +160,7 @@ pub enum LogicalPlan {
     /// A variadic query (e.g. "Recursive CTEs")
     RecursiveQuery(RecursiveQuery),
     /// A streaming window with an aggregate and duration for continuous computations.
-    StreamingWindow(Aggregate, Duration),
+    StreamingWindow(Aggregate, StreamingWindowType),
 }
 
 impl LogicalPlan {
@@ -2205,6 +2205,13 @@ pub enum Distinct {
     All(Arc<LogicalPlan>),
     /// The `Postgres` addition, allowing separate control over DISTINCT'd and selected columns
     On(DistinctOn),
+}
+
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum StreamingWindowType {
+    Tumbling(Duration),
+    Sliding(Duration, Duration),
+    Session(Duration, String),
 }
 
 /// Removes duplicate rows from the input
