@@ -42,12 +42,6 @@ pyarrow = ["pyo3", "arrow/pyarrow", "parquet"]
 default = ["avro"]
 
 [dependencies]
-apache-avro = { version = "0.16", default-features = false, features = [
-    "bzip",
-    "snappy",
-    "xz",
-    "zstandard",
-], optional = true }
 ahash = { version = "0.8", default-features = false, features = [
     "runtime-rng",
 ] }
@@ -60,7 +54,7 @@ apache-avro = { version = "0.16", default-features = false, features = [
 arrow = { workspace = true }
 arrow-array = { workspace = true }
 arrow-buffer = { workspace = true }
-arrow-json = "51.0.0"
+arrow-json = "52.0.0"
 arrow-schema = { workspace = true }
 base64 = "0.22.1"
 chrono = { workspace = true }
