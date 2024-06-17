@@ -39,8 +39,8 @@ mod sort_pushdown;
 pub mod topk_aggregation;
 mod utils;
 
+mod coalesce_before_streaming_window_aggregate;
 #[cfg(test)]
 pub mod test_utils;
-mod coalesce_before_streaming_window_aggregate;
 
 pub use optimizer::PhysicalOptimizerRule;
