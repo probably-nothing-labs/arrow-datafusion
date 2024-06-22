@@ -405,6 +405,9 @@ impl ExecutionPlan for FranzStreamingWindowExec {
         partition: usize,
         context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
+        let task_id = context.task_id();
+        debug!("Window: my task id is {:?}", task_id);
+        context.type_id();
         let stream: Pin<Box<FranzWindowAggStream>> = Box::pin(FranzWindowAggStream::new(
             self,
             context,
