@@ -22,6 +22,7 @@ use crate::{
     disk_manager::{DiskManager, DiskManagerConfig},
     memory_pool::{GreedyMemoryPool, MemoryPool, UnboundedMemoryPool},
     object_store::{DefaultObjectStoreRegistry, ObjectStoreRegistry},
+    rocksdb_backend::RocksDBBackend,
 };
 
 use crate::cache::cache_manager::{CacheManager, CacheManagerConfig};
@@ -43,6 +44,7 @@ use url::Url;
 /// * [`DiskManager`]: Manage temporary files on local disk
 /// * [`CacheManager`]: Manage temporary cache data during the session lifetime
 /// * [`ObjectStoreRegistry`]: Manage mapping URLs to object store instances
+/// * [`RocksDBStateBackend`]: Backend for storing metadata and operator state
 pub struct RuntimeEnv {
     /// Runtime memory management
     pub memory_pool: Arc<dyn MemoryPool>,
@@ -52,6 +54,8 @@ pub struct RuntimeEnv {
     pub cache_manager: Arc<CacheManager>,
     /// Object Store Registry
     pub object_store_registry: Arc<dyn ObjectStoreRegistry>,
+    /// RocksDB State Backend
+    pub state_backend: Arc<RocksDBBackend>,
 }
 
 impl Debug for RuntimeEnv {
@@ -73,11 +77,14 @@ impl RuntimeEnv {
         let memory_pool =
             memory_pool.unwrap_or_else(|| Arc::new(UnboundedMemoryPool::default()));
 
+        let state_backend =
+            Arc::new(RocksDBBackend::new("/state_store.rocksdb").unwrap());
         Ok(Self {
             memory_pool,
             disk_manager: DiskManager::try_new(disk_manager)?,
             cache_manager: CacheManager::try_new(&cache_manager)?,
             object_store_registry,
+            state_backend,
         })
     }
 

@@ -29,6 +29,7 @@ use tracing::{debug, error, info, instrument};
 //use datafusion::datasource::TableProvider;
 //use datafusion_execution::context::SessionState;
 use futures::StreamExt;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::stream::RecordBatchReceiverStreamBuilder;
@@ -99,6 +100,14 @@ pub struct KafkaStreamRead {
     pub assigned_partitions: Vec<i32>,
 }
 
+#[derive(Serialize, Deserialize)]
+struct BatchReadMetadata {
+    epoch: i32,
+    min_timestamp: Option<i64>,
+    max_timestamp: Option<i64>,
+    offsets_read: Vec<(i32, i64)>,
+}
+
 impl PartitionStream for KafkaStreamRead {
     fn schema(&self) -> &SchemaRef {
         &self.config.schema
@@ -107,9 +116,17 @@ impl PartitionStream for KafkaStreamRead {
     #[instrument(name = "KafkaStreamRead::execute", skip(self, _ctx))]
     fn execute(&self, _ctx: Arc<TaskContext>) -> SendableRecordBatchStream {
         let mut assigned_partitions = TopicPartitionList::new();
+        let topic = self.config.topic.clone();
         for partition in self.assigned_partitions.clone() {
             assigned_partitions.add_partition(self.config.topic.as_str(), partition);
         }
+        let partition_tag = self
+            .assigned_partitions
+            .iter()
+            .map(|&x| x.to_string())
+            .collect::<Vec<String>>()
+            .join("_");
+
         info!("Reading partition {:?}", assigned_partitions);
 
         let mut client_config = ClientConfig::new();
@@ -140,10 +157,20 @@ impl PartitionStream for KafkaStreamRead {
         let json_schema = self.config.original_schema.clone();
         let timestamp_column: String = self.config.timestamp_column.clone();
         let timestamp_unit = self.config.timestamp_unit.clone();
-
+        let task_id = _ctx.task_id();
+        let state_backend = _ctx.runtime_env().state_backend.clone();
+        let state_namespace = format!("kafka_source_{}", topic);
+        let _ = state_backend.create_cf(state_namespace.as_str());
         let _ = builder.spawn(async move {
-            // should this be blocking?
+            debug!(
+                "KafkaSource: my task id is {:?} and i am reading {}",
+                task_id, topic
+            );
+            let mut epoch = 0;
             loop {
+                // the tuple is of formart partition, offset
+                let mut offsets_read: Vec<(i32, i64)> = vec![];
+
                 let batch: Vec<serde_json::Value> = consumer
                     .stream()
                     .take_until(tokio::time::sleep(Duration::from_secs(1)))
@@ -154,8 +181,8 @@ impl PartitionStream for KafkaStreamRead {
                                 Timestamp::CreateTime(ts) => ts,
                                 Timestamp::LogAppendTime(ts) => ts,
                             };
-                            let key = m.key();
 
+                            let key = m.key();
                             let payload = m.payload().expect("Message payload is empty");
                             let mut deserialized_record: HashMap<String, Value> =
                                 serde_json::from_slice(payload).unwrap();
@@ -176,6 +203,8 @@ impl PartitionStream for KafkaStreamRead {
                             }
                             let new_payload =
                                 serde_json::to_value(deserialized_record).unwrap();
+                            offsets_read.push((m.partition(), m.offset()));
+
                             new_payload
                         }
                         Err(err) => {
@@ -185,8 +214,6 @@ impl PartitionStream for KafkaStreamRead {
                     })
                     .collect()
                     .await;
-
-                debug!("Batch size {}", batch.len());
 
                 let record_batch: RecordBatch =
                     json_records_to_arrow_record_batch(batch, json_schema.clone());
@@ -205,17 +232,31 @@ impl PartitionStream for KafkaStreamRead {
 
                 let max_timestamp: Option<_> = max::<TimestampMillisecondType>(&ts_array);
                 let min_timestamp: Option<_> = min::<TimestampMillisecondType>(&ts_array);
-                debug!("min: {:?}, max: {:?}", min_timestamp, max_timestamp);
                 let mut columns: Vec<Arc<dyn Array>> = record_batch.columns().to_vec();
                 columns.push(ts_column);
 
                 let timestamped_record_batch: RecordBatch =
                     RecordBatch::try_new(canonical_schema.clone(), columns).unwrap();
                 let tx_result = tx.send(Ok(timestamped_record_batch)).await;
+
                 match tx_result {
-                    Ok(m) => debug!("result ok {:?}", m),
+                    Ok(m) => {
+                        let _ = state_backend
+                            .put_state(
+                                &state_namespace,
+                                partition_tag.clone(),
+                                BatchReadMetadata {
+                                    epoch,
+                                    min_timestamp,
+                                    max_timestamp,
+                                    offsets_read,
+                                },
+                            )
+                            .await;
+                    }
                     Err(err) => error!("result err {:?}", err),
                 }
+                epoch += 1;
             }
         });
         builder.build()
