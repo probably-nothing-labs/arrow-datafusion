@@ -97,6 +97,7 @@ impl StreamingTableExec {
             &projected_output_ordering,
             &partitions,
             infinite,
+            limit, //WARNING: limit has been overloaded to pass through operator id.
         );
         Ok(Self {
             partitions,
@@ -144,6 +145,7 @@ impl StreamingTableExec {
         orderings: &[LexOrdering],
         partitions: &[Arc<dyn PartitionStream>],
         is_infinite: bool,
+        operator_id: Option<usize>,
     ) -> PlanProperties {
         // Calculate equivalence properties:
         let eq_properties = EquivalenceProperties::new_with_orderings(schema, orderings);
@@ -159,6 +161,7 @@ impl StreamingTableExec {
         };
 
         PlanProperties::new(eq_properties, output_partitioning, mode)
+            .with_operator_id(operator_id)
     }
 }
 

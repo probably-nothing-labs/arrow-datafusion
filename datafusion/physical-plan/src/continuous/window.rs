@@ -221,6 +221,7 @@ impl FranzStreamingWindowExec {
         input: Arc<dyn ExecutionPlan>,
         input_schema: SchemaRef,
         window_type: FranzStreamingWindowType,
+        operator_id: Option<usize>,
     ) -> Result<Self> {
         let schema = create_schema(
             &input.schema(),
@@ -240,6 +241,7 @@ impl FranzStreamingWindowExec {
             input_schema,
             schema,
             window_type,
+            operator_id,
         )
     }
 
@@ -252,6 +254,7 @@ impl FranzStreamingWindowExec {
         input_schema: SchemaRef,
         schema: SchemaRef,
         window_type: FranzStreamingWindowType,
+        operator_id: Option<usize>,
     ) -> Result<Self> {
         if aggr_expr.len() != filter_expr.len() {
             return internal_err!("Inconsistent aggregate expr: {:?} and filter expr: {:?} for AggregateExec, their size should match", aggr_expr, filter_expr);
@@ -300,6 +303,7 @@ impl FranzStreamingWindowExec {
             &projection_mapping,
             &mode,
             &input_order_mode,
+            operator_id,
         );
 
         Ok(Self {
@@ -334,6 +338,7 @@ impl FranzStreamingWindowExec {
         projection_mapping: &ProjectionMapping,
         mode: &AggregateMode,
         _input_order_mode: &InputOrderMode,
+        operator_id: Option<usize>,
     ) -> PlanProperties {
         // Construct equivalence properties:
         let eq_properties = input
@@ -363,6 +368,7 @@ impl FranzStreamingWindowExec {
         }
 
         PlanProperties::new(eq_properties, output_partitioning, ExecutionMode::Unbounded)
+            .with_operator_id(operator_id)
     }
     /// Aggregate expressions
     pub fn aggr_expr(&self) -> &[Arc<dyn AggregateExpr>] {
@@ -409,6 +415,7 @@ impl ExecutionPlan for FranzStreamingWindowExec {
             children[0].clone(),
             self.input_schema.clone(),
             self.window_type.clone(),
+            self.properties().operator_id,
         )?))
     }
 
@@ -498,7 +505,7 @@ impl DisplayAs for FranzStreamingWindowExec {
     ) -> std::fmt::Result {
         match t {
             DisplayFormatType::Default | DisplayFormatType::Verbose => {
-                write!(f, "FranzStreamingWindowExec: mode={:?}", self.mode)?;
+                write!(f, "StreamingWindowExec: mode={:?}", self.mode)?;
                 let g: Vec<String> = if self.group_by.is_single() {
                     self.group_by
                         .expr

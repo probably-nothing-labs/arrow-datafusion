@@ -581,6 +581,8 @@ pub struct PlanProperties {
     pub partitioning: Partitioning,
     /// See [ExecutionPlanProperties::execution_mode]
     pub execution_mode: ExecutionMode,
+    /// See [ExecutionPlanProperties::operator_id]
+    pub operator_id: Option<usize>,
     /// See [ExecutionPlanProperties::output_ordering]
     output_ordering: Option<LexOrdering>,
 }
@@ -598,6 +600,7 @@ impl PlanProperties {
             eq_properties,
             partitioning,
             execution_mode,
+            operator_id: None,
             output_ordering,
         }
     }
@@ -620,6 +623,12 @@ impl PlanProperties {
         // make sure to overwrite it:
         self.output_ordering = eq_properties.output_ordering();
         self.eq_properties = eq_properties;
+        self
+    }
+
+    pub fn with_operator_id(mut self, operator_id: Option<usize>) -> Self {
+        // Operator id for the physical plan
+        self.operator_id = operator_id;
         self
     }
 
