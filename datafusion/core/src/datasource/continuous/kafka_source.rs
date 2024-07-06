@@ -42,6 +42,7 @@ impl KafkaSource {
     pub async fn create_physical_plan(
         &self,
         projection: Option<&Vec<usize>>,
+        operator_id: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         let projected_schema = match projection {
             Some(p) => {
@@ -66,7 +67,7 @@ impl KafkaSource {
             projection,
             projected_schema,
             true,
-            None,
+            operator_id,
         )?))
     }
 }
@@ -92,7 +93,7 @@ impl TableProvider for KafkaSource {
         _filters: &[Expr],
         _limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
-        return self.create_physical_plan(projection).await;
+        return self.create_physical_plan(projection, _limit).await;
     }
 }
 

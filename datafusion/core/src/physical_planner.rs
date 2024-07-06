@@ -634,6 +634,7 @@ impl DefaultPhysicalPlanner {
         let mut plan = self
             .map_logical_node_to_physical(
                 node.node,
+                leaf_starter_index,
                 session_state,
                 ChildrenContainer::None,
             )
@@ -651,6 +652,7 @@ impl DefaultPhysicalPlanner {
                     plan = self
                         .map_logical_node_to_physical(
                             node.node,
+                            current_index,
                             session_state,
                             ChildrenContainer::One(plan),
                         )
@@ -688,7 +690,12 @@ impl DefaultPhysicalPlanner {
                     let children = children.into_iter().map(|epc| epc.plan).collect();
                     let children = ChildrenContainer::Multiple(children);
                     plan = self
-                        .map_logical_node_to_physical(node.node, session_state, children)
+                        .map_logical_node_to_physical(
+                            node.node,
+                            current_index,
+                            session_state,
+                            children,
+                        )
                         .await?;
                 }
             }
@@ -702,6 +709,7 @@ impl DefaultPhysicalPlanner {
     async fn map_logical_node_to_physical(
         &self,
         node: &LogicalPlan,
+        node_index: usize,
         session_state: &SessionState,
         children: ChildrenContainer,
     ) -> Result<Arc<dyn ExecutionPlan>> {
@@ -714,14 +722,24 @@ impl DefaultPhysicalPlanner {
                 fetch,
                 ..
             }) => {
+                debug!("TableScan... node index is {}", node_index);
                 let source = source_as_provider(source)?;
                 // Remove all qualifiers from the scan as the provider
                 // doesn't know (nor should care) how the relation was
                 // referred to in the query
                 let filters = unnormalize_cols(filters.iter().cloned());
-                source
-                    .scan(session_state, projection.as_ref(), &filters, *fetch)
-                    .await?
+
+                // NOTE: we need to change the signature for SCAN but for now we are overloading
+                //       limit field to scan to pass the operator id for Streaming scans.
+                let limit = if (*fetch).is_none() {
+                    Some(node_index)
+                } else {
+                    *fetch
+                };
+                let plan = source
+                    .scan(session_state, projection.as_ref(), &filters, limit)
+                    .await?;
+                plan
             }
             LogicalPlan::Values(Values { values, schema }) => {
                 let exec_schema = schema.as_ref().to_owned().into();
@@ -1510,6 +1528,7 @@ impl DefaultPhysicalPlanner {
                 },
                 window_type,
             ) => {
+                debug!("StreamingWindow... node index is {}", node_index);
                 // Initially need to perform the aggregate and then merge the partitions
                 let input_exec = children.one()?;
                 let physical_input_schema: Arc<Schema> = input_exec.schema();
@@ -1554,6 +1573,7 @@ impl DefaultPhysicalPlanner {
                     input_exec,
                     physical_input_schema.clone(),
                     franz_window_type,
+                    Some(node_index),
                 )?);
                 initial_aggr
             }

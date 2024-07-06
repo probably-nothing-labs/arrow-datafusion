@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use datafusion_physical_expr::Partitioning;
 use datafusion_physical_plan::repartition::RepartitionExec;
-use datafusion_physical_plan::ExecutionPlanProperties;
+use datafusion_physical_plan::{ExecutionPlan, ExecutionPlanProperties};
 
 use crate::common::tree_node::{Transformed, TransformedResult, TreeNode};
 use crate::error::Result;
@@ -52,6 +52,7 @@ impl PhysicalOptimizerRule for CoaslesceBeforeStreamingAggregate {
                         coalesce_exec.clone(),
                         input.schema(),
                         streaming_aggr_exec.window_type.clone(),
+                        streaming_aggr_exec.properties().operator_id,
                     )?,
                 )))
             } else {
@@ -139,6 +140,7 @@ pub(crate) mod tests {
             source,
             Arc::clone(&schema),
             FranzStreamingWindowType::Tumbling(Duration::from_millis(5000)),
+            Some(1),
         )
         .unwrap();
 
@@ -172,6 +174,7 @@ pub(crate) mod tests {
             source,
             Arc::clone(&schema),
             FranzStreamingWindowType::Tumbling(Duration::from_millis(5000)),
+            Some(1),
         )
         .unwrap();
 
