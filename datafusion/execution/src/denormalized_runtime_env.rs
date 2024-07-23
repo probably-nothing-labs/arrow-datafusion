@@ -1,72 +1,107 @@
-use std::{any::Any, sync::Arc};
+use std::any::Any;
+use std::fmt::{Debug, Formatter};
+use std::sync::Arc;
 
-use datafusion_common::{DataFusionError, Result};
+use crate::rocksdb_backend::RocksDBBackend;
+use crate::runtime_env::RuntimeEnv;
 
-use crate::{
-    rocksdb_backend::RocksDBBackend,
-    runtime_env::{RuntimeConfig, RuntimeEnv},
-};
+/// A trait that provides a way to downcast to `RuntimeEnv`
+pub trait AsRuntimeEnv: Debug {
+    /// Returns self as a reference to `RuntimeEnv`, if possible.
+    fn as_runtime_env(&self) -> Option<&RuntimeEnv>;
+    fn as_any(&self) -> &dyn std::any::Any;
+}
 
+/// Denormalized RuntimeEnv that can be downcasted to `RuntimeEnv`
+#[derive(Clone)]
 pub struct DenormalizedRuntimeEnv {
-    // Inherit all fields from RuntimeEnv
-    runtime_env: RuntimeEnv,
-    // Add RocksDB connection
-    rocksdb: Arc<RocksDBBackend>,
+    pub runtime_env: Arc<dyn AsRuntimeEnv + Send + Sync>,
+    pub rocksdb: Arc<RocksDBBackend>, // Added rocksdb field
+}
+
+impl Debug for DenormalizedRuntimeEnv {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "DenormalizedRuntimeEnv {{ ... }}") // Simplified for brevity
+    }
 }
 
 impl DenormalizedRuntimeEnv {
-    pub fn new(
-        config: RuntimeConfig,
-        rocksdb: Arc<RocksDBBackend>,
-    ) -> Result<Self, DataFusionError> {
-        let runtime_env = RuntimeEnv::new(config)?;
-        Ok(Self {
-            runtime_env,
+    /// Create a new DenormalizedRuntimeEnv
+    pub fn new(runtime_env: RuntimeEnv, rocksdb: Arc<RocksDBBackend>) -> Self {
+        Self {
+            runtime_env: Arc::new(runtime_env),
             rocksdb,
-        })
+        }
     }
 
-    // Getter for RocksDB connection
-    pub fn rocksdb(&self) -> &Arc<RocksDBBackend> {
-        &self.rocksdb
+    pub fn rocksdb(&self) -> Arc<RocksDBBackend> {
+        self.rocksdb.clone()
     }
-}
 
-// Implement Deref to allow transparent access to RuntimeEnv methods
-impl std::ops::Deref for DenormalizedRuntimeEnv {
-    type Target = RuntimeEnv;
-
-    fn deref(&self) -> &Self::Target {
-        &self.runtime_env
+    /// Downcast to `RuntimeEnv`
+    pub fn runtime_env(&self) -> &RuntimeEnv {
+        self.runtime_env.as_runtime_env().unwrap()
     }
 }
 
-// Implement DerefMut if you need mutable access to RuntimeEnv fields
-impl std::ops::DerefMut for DenormalizedRuntimeEnv {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.runtime_env
+impl AsRuntimeEnv for RuntimeEnv {
+    fn as_runtime_env(&self) -> Option<&RuntimeEnv> {
+        Some(self)
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 
-// Implement From<DenormalizedRuntimeEnv> for RuntimeEnv
-impl From<DenormalizedRuntimeEnv> for RuntimeEnv {
-    fn from(env: DenormalizedRuntimeEnv) -> Self {
-        env.runtime_env
+impl AsRuntimeEnv for DenormalizedRuntimeEnv {
+    fn as_runtime_env(&self) -> Option<&RuntimeEnv> {
+        self.runtime_env.as_runtime_env()
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
-
-pub trait RuntimeEnvExt {
+pub trait ExtendedEnv {
     fn as_any(&self) -> &dyn Any;
-    fn as_any_mut(&mut self) -> &mut dyn Any;
+    fn some_method(&self);
 }
 
-// Implement RuntimeEnvExt for RuntimeEnv
-impl RuntimeEnvExt for RuntimeEnv {
+// Implement the trait for RuntimeEnv
+impl ExtendedEnv for RuntimeEnv {
     fn as_any(&self) -> &dyn Any {
         self
     }
 
-    fn as_any_mut(&mut self) -> &mut dyn Any {
+    fn some_method(&self) {
+        println!("Called some_method on RuntimeEnv");
+    }
+}
+
+// Create your own extended runtime environment
+pub struct MyRuntimeEnv {
+    pub env: Arc<RuntimeEnv>,
+    // Add additional fields or methods here
+}
+
+impl MyRuntimeEnv {
+    pub fn new(env: Arc<RuntimeEnv>) -> Self {
+        MyRuntimeEnv { env }
+    }
+
+    pub fn my_method(&self) {
+        println!("MyRuntimeEnv specific method");
+    }
+}
+
+impl ExtendedEnv for MyRuntimeEnv {
+    fn as_any(&self) -> &dyn Any {
         self
+    }
+
+    fn some_method(&self) {
+        self.env.some_method();
+        println!("Called some_method on MyRuntimeEnv");
     }
 }

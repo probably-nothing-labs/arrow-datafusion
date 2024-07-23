@@ -28,9 +28,8 @@ use arrow_array::{
 use arrow_schema::{DataType, Field, SchemaRef, TimeUnit};
 use datafusion_common::franz_arrow::json_records_to_arrow_record_batch;
 use datafusion_execution::denormalized_runtime_env::{
-    DenormalizedRuntimeEnv, RuntimeEnvExt,
+    AsRuntimeEnv, DenormalizedRuntimeEnv,
 };
-use datafusion_execution::rocksdb_backend::RocksDBBackend;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -146,15 +145,12 @@ impl PartitionStream for KafkaStreamRead {
 
         // RuntimeEnv lives for the entire lifetime of the pipeline.
         // Needed an end run around borrow checker: error[E0716]: temporary value dropped while borrowed
-        let state_backend = unsafe {
-            std::mem::transmute::<&Arc<RocksDBBackend>, &'static Arc<RocksDBBackend>>(
-                ctx.runtime_env()
-                    .as_any()
-                    .downcast_ref::<DenormalizedRuntimeEnv>()
-                    .expect("Expected DenormalizedRuntimeEnv")
-                    .rocksdb(),
-            )
-        };
+        let state_backend = ctx
+            .runtime_env()
+            .as_any()
+            .downcast_ref::<DenormalizedRuntimeEnv>()
+            .expect("Expected DenormalizedRuntimeEnv")
+            .rocksdb();
 
         client_config
             .set(
