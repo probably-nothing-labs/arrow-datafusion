@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{any::Any, sync::Arc};
 
 use datafusion_common::{DataFusionError, Result};
 
@@ -52,5 +52,21 @@ impl std::ops::DerefMut for DenormalizedRuntimeEnv {
 impl From<DenormalizedRuntimeEnv> for RuntimeEnv {
     fn from(env: DenormalizedRuntimeEnv) -> Self {
         env.runtime_env
+    }
+}
+
+pub trait RuntimeEnvExt {
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+}
+
+// Implement RuntimeEnvExt for RuntimeEnv
+impl RuntimeEnvExt for RuntimeEnv {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
