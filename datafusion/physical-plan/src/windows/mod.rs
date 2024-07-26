@@ -46,19 +46,13 @@ use datafusion_physical_expr::{
 use itertools::Itertools;
 
 mod bounded_window_agg_exec;
-
-#[cfg(feature = "franz")]
-pub mod stream_window_agg_exec;
-#[cfg(feature = "franz")]
-pub use stream_window_agg_exec::{FranzWindowExec, FranzWindowType};
-
 mod window_agg_exec;
 
 pub use bounded_window_agg_exec::BoundedWindowAggExec;
 pub use datafusion_physical_expr::window::{
     BuiltInWindowExpr, PlainAggregateWindowExpr, WindowExpr,
 };
-pub use window_agg_exec::WindowAggExec;
+pub use window_agg_exec::{WindowAggExec, compute_window_aggregates};
 
 /// Build field from window function and add it into schema
 pub fn schema_add_window_field(
