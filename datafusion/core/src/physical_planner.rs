@@ -40,7 +40,7 @@ use crate::logical_expr::{
 };
 use crate::logical_expr::{
     Expr, LogicalPlan, Partitioning as LogicalPartitioning, PlanType, Repartition,
-    StreamingWindowType, UserDefinedLogicalNode,
+    UserDefinedLogicalNode,
 };
 use crate::logical_expr::{Limit, Values};
 use crate::physical_expr::{create_physical_expr, create_physical_exprs};
@@ -94,9 +94,6 @@ use datafusion_expr::{
 };
 use datafusion_physical_expr::expressions::Literal;
 use datafusion_physical_expr::LexOrdering;
-use datafusion_physical_plan::continuous::window::{
-    FranzStreamingWindowExec, FranzStreamingWindowType,
-};
 use datafusion_physical_plan::placeholder_row::PlaceholderRowExec;
 use datafusion_sql::utils::window_expr_common_partition_keys;
 

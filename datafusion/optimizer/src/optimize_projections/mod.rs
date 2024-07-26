@@ -30,11 +30,11 @@ use datafusion_common::{
     JoinType, Result,
 };
 use datafusion_expr::expr::Alias;
+use datafusion_expr::Unnest;
 use datafusion_expr::{
     logical_plan::LogicalPlan, projection_schema, Aggregate, Distinct, Expr, Projection,
     TableScan, Window,
 };
-use datafusion_expr::{StreamingWindowSchema, Unnest};
 
 use crate::optimize_projections::required_indices::RequiredIndicies;
 use crate::utils::NamePreserver;
@@ -210,100 +210,6 @@ fn optimize_projections(
                     new_aggr_expr,
                 )
                 .map(LogicalPlan::Aggregate)
-            });
-        }
-        LogicalPlan::StreamingWindow(aggregate, window, ..) => {
-            // Split parent requirements to GROUP BY and aggregate sections:
-            let n_group_exprs = aggregate.group_expr_len()?;
-            // Offset aggregate indices so that they point to valid indices at
-            // `aggregate.aggr_expr`:
-            let (group_by_reqs, aggregate_reqs) = indices.split_off(n_group_exprs);
-
-            // Get absolutely necessary GROUP BY fields:
-            let group_by_expr_existing = aggregate
-                .group_expr
-                .iter()
-                .map(|group_by_expr| group_by_expr.display_name())
-                .collect::<Result<Vec<_>>>()?;
-
-            let new_group_bys = if let Some(simplest_groupby_indices) =
-                get_required_group_by_exprs_indices(
-                    aggregate.input.schema(),
-                    &group_by_expr_existing,
-                ) {
-                // Some of the fields in the GROUP BY may be required by the
-                // parent even if these fields are unnecessary in terms of
-                // functional dependency.
-                group_by_reqs
-                    .append(&simplest_groupby_indices)
-                    .get_at_indices(&aggregate.group_expr)
-            } else {
-                aggregate.group_expr
-            };
-
-            // Only use the absolutely necessary aggregate expressions required
-            // by the parent:
-            let mut new_aggr_expr = aggregate_reqs.get_at_indices(&aggregate.aggr_expr);
-
-            // Aggregations always need at least one aggregate expression.
-            // With a nested count, we don't require any column as input, but
-            // still need to create a correct aggregate, which may be optimized
-            // out later. As an example, consider the following query:
-            //
-            // SELECT COUNT(*) FROM (SELECT COUNT(*) FROM [...])
-            //
-            // which always returns 1.
-            if new_aggr_expr.is_empty()
-                && new_group_bys.is_empty()
-                && !aggregate.aggr_expr.is_empty()
-            {
-                // take the old, first aggregate expression
-                new_aggr_expr = aggregate.aggr_expr;
-                new_aggr_expr.resize_with(1, || unreachable!());
-            }
-
-            let all_exprs_iter = new_group_bys.iter().chain(new_aggr_expr.iter());
-            let schema = aggregate.input.schema();
-            let necessary_indices =
-                RequiredIndicies::new().with_exprs(schema, all_exprs_iter)?;
-
-            //TODO: This is a bit of a hack to make sure canonical timestamps aren't erased by the optimizer.
-            //      Ideally we want to have a concept of canonical timestamps that optimizer rules are aware of and
-            //      thus don't mess with them.
-            let col = schema
-                .index_of_column_by_name(None, "_streaming_internal_metadata")
-                .unwrap();
-
-            let necessary_indices = necessary_indices.append(&[col]);
-            let necessary_exprs = necessary_indices.get_required_exprs(schema);
-
-            return optimize_projections(
-                unwrap_arc(aggregate.input),
-                config,
-                necessary_indices,
-            )?
-            .transform_data(|aggregate_input| {
-                // Simplify the input of the aggregation by adding a projection so
-                // that its input only contains absolutely necessary columns for
-                // the aggregate expressions. Note that necessary_indices refer to
-                // fields in `aggregate.input.schema()`.
-                add_projection_on_top_if_helpful(aggregate_input, necessary_exprs)
-            })?
-            .map_data(|aggregate_input| {
-                // Create a new aggregate plan with the updated input and only the
-                // absolutely necessary fields:
-                Aggregate::try_new(
-                    Arc::new(aggregate_input),
-                    new_group_bys,
-                    new_aggr_expr,
-                )
-                .map(|agg| {
-                    LogicalPlan::StreamingWindow(
-                        agg.clone(),
-                        window,
-                        StreamingWindowSchema::try_new(agg).unwrap(),
-                    )
-                })
             });
         }
         LogicalPlan::Window(window) => {
