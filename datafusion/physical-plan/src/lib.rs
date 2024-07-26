@@ -48,7 +48,6 @@ pub mod analyze;
 pub mod coalesce_batches;
 pub mod coalesce_partitions;
 pub mod common;
-pub mod continuous;
 pub mod display;
 pub mod empty;
 pub mod explain;
