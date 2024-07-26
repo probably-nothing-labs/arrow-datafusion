@@ -65,7 +65,6 @@ pub mod repartition;
 pub mod sorts;
 pub mod stream;
 pub mod streaming;
-pub mod time;
 pub mod tree_node;
 pub mod union;
 pub mod unnest;
