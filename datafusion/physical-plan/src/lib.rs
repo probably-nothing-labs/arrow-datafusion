@@ -637,7 +637,7 @@ impl PlanProperties {
     }
 
     /// Get schema of the node.
-    fn schema(&self) -> &SchemaRef {
+    pub fn schema(&self) -> &SchemaRef {
         self.eq_properties.schema()
     }
 }

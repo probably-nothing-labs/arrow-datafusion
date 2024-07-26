@@ -1036,7 +1036,7 @@ pub(crate) fn merge_expressions(
     })
 }
 
-pub(crate) type AccumulatorItem = Box<dyn Accumulator>;
+pub type AccumulatorItem = Box<dyn Accumulator>;
 
 pub(crate) fn create_accumulators(
     aggr_expr: &[Arc<dyn AggregateExpr>],
