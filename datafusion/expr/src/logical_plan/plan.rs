@@ -2636,46 +2636,6 @@ impl Distinct {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub enum StreamingWindowType {
-    Tumbling(Duration),
-    Sliding(Duration, Duration),
-    Session(Duration, String),
-}
-
-#[derive(Clone, PartialEq, Eq, Hash)]
-// mark non_exhaustive to encourage use of try_new/new()
-#[non_exhaustive]
-pub struct StreamingWindowSchema {
-    pub schema: DFSchemaRef,
-}
-
-impl StreamingWindowSchema {
-    pub fn try_new(aggr_expr: Aggregate) -> Result<Self> {
-        let inner_schema = aggr_expr.schema.inner().clone();
-        let fields = inner_schema.all_fields().to_owned();
-
-        let mut builder = SchemaBuilder::new();
-
-        for field in fields {
-            builder.push(field.clone());
-        }
-        builder.push(Field::new(
-            "window_start_time",
-            DataType::Timestamp(TimeUnit::Millisecond, None),
-            false,
-        ));
-        builder.push(Field::new(
-            "window_end_time",
-            DataType::Timestamp(TimeUnit::Millisecond, None),
-            false,
-        ));
-        let schema_with_window_columns = DFSchema::try_from(builder.finish())?;
-        Ok(StreamingWindowSchema {
-            schema: Arc::new(schema_with_window_columns),
-        })
-    }
-}
 /// Removes duplicate rows from the input
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct DistinctOn {
