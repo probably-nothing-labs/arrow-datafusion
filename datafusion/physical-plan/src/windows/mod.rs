@@ -52,7 +52,7 @@ pub use bounded_window_agg_exec::BoundedWindowAggExec;
 pub use datafusion_physical_expr::window::{
     BuiltInWindowExpr, PlainAggregateWindowExpr, WindowExpr,
 };
-pub use window_agg_exec::{WindowAggExec, compute_window_aggregates};
+pub use window_agg_exec::WindowAggExec;
 
 /// Build field from window function and add it into schema
 pub fn schema_add_window_field(

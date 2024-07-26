@@ -21,7 +21,6 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
-use std::time::Duration;
 
 use super::dml::CopyTo;
 use super::DdlStatement;
@@ -41,7 +40,7 @@ use crate::{
     TableProviderFilterPushDown, TableSource, WindowFunctionDefinition,
 };
 
-use arrow::datatypes::{DataType, Field, Schema, SchemaBuilder, SchemaRef, TimeUnit};
+use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion_common::tree_node::{
     Transformed, TransformedResult, TreeNode, TreeNodeRecursion,
 };
