@@ -17,7 +17,6 @@
 
 //! [`ScalarValue`]: stores single  values
 
-mod serialize;
 mod struct_builder;
 use std::borrow::Borrow;
 use std::cmp::Ordering;
