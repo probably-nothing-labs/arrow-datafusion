@@ -55,7 +55,6 @@ pub mod explain;
 pub mod filter;
 pub mod insert;
 pub mod joins;
-pub mod kafka_source;
 pub mod limit;
 pub mod memory;
 pub mod metrics;
