@@ -1498,63 +1498,6 @@ impl DefaultPhysicalPlanner {
                     "Unsupported logical plan: Analyze must be root of the plan"
                 )
             }
-            LogicalPlan::StreamingWindow(
-                Aggregate {
-                    input,
-                    group_expr,
-                    aggr_expr,
-                    ..
-                },
-                window_type,
-                window_schema,
-            ) => {
-                // Initially need to perform the aggregate and then merge the partitions
-                let input_exec = children.one()?;
-                let physical_input_schema: Arc<Schema> = input_exec.schema();
-
-                let logical_input_schema = input.as_ref().schema();
-
-                let groups = self.create_grouping_physical_expr(
-                    group_expr,
-                    logical_input_schema,
-                    &physical_input_schema,
-                    session_state,
-                )?;
-
-                let agg_filter = aggr_expr
-                    .iter()
-                    .map(|e| {
-                        create_aggregate_expr_and_maybe_filter(
-                            e,
-                            logical_input_schema,
-                            &physical_input_schema,
-                            session_state.execution_props(),
-                        )
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-
-                let (aggregates, filters, _order_bys): (Vec<_>, Vec<_>, Vec<_>) =
-                    multiunzip(agg_filter);
-                let franz_window_type = match window_type {
-                    StreamingWindowType::Tumbling(length) => {
-                        FranzStreamingWindowType::Tumbling(length.clone())
-                    }
-                    StreamingWindowType::Sliding(length, slide) => {
-                        FranzStreamingWindowType::Sliding(length.clone(), slide.clone())
-                    }
-                    StreamingWindowType::Session(length, key) => todo!(),
-                };
-                let initial_aggr = Arc::new(FranzStreamingWindowExec::try_new(
-                    AggregateMode::Partial,
-                    groups.clone(),
-                    aggregates.clone(),
-                    filters.clone(),
-                    input_exec,
-                    physical_input_schema.clone(),
-                    franz_window_type,
-                )?);
-                initial_aggr
-            }
         };
         Ok(exec_node)
     }

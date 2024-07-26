@@ -394,7 +394,6 @@ fn optimize_projections(
         LogicalPlan::Projection(_)
         | LogicalPlan::Aggregate(_)
         | LogicalPlan::Window(_)
-        | LogicalPlan::StreamingWindow(..)
         | LogicalPlan::TableScan(_) => {
             return internal_err!(
                 "OptimizeProjection: should have handled in the match statement above"
