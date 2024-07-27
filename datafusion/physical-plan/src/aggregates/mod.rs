@@ -1038,7 +1038,7 @@ pub(crate) fn merge_expressions(
 
 pub type AccumulatorItem = Box<dyn Accumulator>;
 
-pub(crate) fn create_accumulators(
+pub fn create_accumulators(
     aggr_expr: &[Arc<dyn AggregateExpr>],
 ) -> Result<Vec<AccumulatorItem>> {
     aggr_expr
