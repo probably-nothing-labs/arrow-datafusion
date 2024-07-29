@@ -27,11 +27,11 @@ use arrow_array::{
 };
 use arrow_schema::{DataType, Field, SchemaRef, TimeUnit};
 use datafusion_common::franz_arrow::json_records_to_arrow_record_batch;
-use tracing::{debug, error, info, instrument};
-//use datafusion::datasource::TableProvider;
-//use datafusion_execution::context::SessionState;
+use datafusion_execution::rocksdb_backend::get_global_rocksdb;
 use futures::StreamExt;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tracing::{debug, error};
 
 use crate::stream::RecordBatchReceiverStreamBuilder;
 use crate::streaming::PartitionStream;
@@ -101,21 +101,46 @@ pub struct KafkaStreamRead {
     pub assigned_partitions: Vec<i32>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct BatchReadMetadata {
+    epoch: i32,
+    min_timestamp: Option<i64>,
+    max_timestamp: Option<i64>,
+    offsets_read: Vec<(i32, i64)>,
+}
+
+impl BatchReadMetadata {
+    // Serialize to Vec<u8> using bincode
+    fn to_bytes(&self) -> Result<Vec<u8>, bincode::Error> {
+        bincode::serialize(self)
+    }
+
+    // Deserialize from Vec<u8> using bincode
+    fn from_bytes(bytes: &[u8]) -> Result<Self, bincode::Error> {
+        bincode::deserialize(bytes)
+    }
+}
+
 impl PartitionStream for KafkaStreamRead {
     fn schema(&self) -> &SchemaRef {
         &self.config.schema
     }
 
-    #[instrument(name = "KafkaStreamRead::execute", skip(self, _ctx))]
-    fn execute(&self, _ctx: Arc<TaskContext>) -> SendableRecordBatchStream {
+    fn execute(&self, ctx: Arc<TaskContext>) -> SendableRecordBatchStream {
         let mut assigned_partitions = TopicPartitionList::new();
+        let topic = self.config.topic.clone();
         for partition in self.assigned_partitions.clone() {
             assigned_partitions.add_partition(self.config.topic.as_str(), partition);
         }
-        info!("Reading partition {:?}", assigned_partitions);
+        let partition_tag = self
+            .assigned_partitions
+            .iter()
+            .map(|&x| x.to_string())
+            .collect::<Vec<String>>()
+            .join("_");
 
         let mut client_config = ClientConfig::new();
-
+        let state_backend = get_global_rocksdb().unwrap();
         client_config
             .set(
                 "bootstrap.servers",
@@ -133,6 +158,18 @@ impl PartitionStream for KafkaStreamRead {
             .assign(&assigned_partitions)
             .expect("Partition assignment failed.");
 
+        let state_namespace = format!("kafka_source_{}", topic);
+
+        let _ = match state_backend.get_cf(&state_namespace) {
+            Ok(cf) => {
+                debug!("cf for this already exists");
+                Ok(cf)
+            }
+            Err(..) => {
+                let _ = state_backend.create_cf(&state_namespace);
+                state_backend.get_cf(&state_namespace)
+            }
+        };
         //let schema = self.config.schema.clone();
 
         let mut builder =
@@ -143,8 +180,26 @@ impl PartitionStream for KafkaStreamRead {
         let timestamp_column: String = self.config.timestamp_column.clone();
         let timestamp_unit = self.config.timestamp_unit.clone();
 
+        let _ = state_backend.create_cf(state_namespace.as_str());
         let _ = builder.spawn(async move {
+            let mut epoch = 0;
             loop {
+                let last_read_offsets = state_backend
+                    .get_state(&state_namespace, partition_tag.clone().into_bytes())
+                    .await?;
+
+                match last_read_offsets {
+                    Some(offsets) => {
+                        let last_batch_metadata =
+                            BatchReadMetadata::from_bytes(&offsets).unwrap();
+                        debug!(
+                            "epoch is {} and last read offsets are {:?}",
+                            epoch, last_batch_metadata
+                        );
+                    }
+                    None => debug!("epoch is {} and no prior offsets were found.", epoch),
+                };
+                let mut offsets_read: Vec<(i32, i64)> = vec![];
                 let batch: Vec<serde_json::Value> = consumer
                     .stream()
                     .take_until(tokio::time::sleep(Duration::from_secs(1)))
@@ -177,6 +232,7 @@ impl PartitionStream for KafkaStreamRead {
                             }
                             let new_payload =
                                 serde_json::to_value(deserialized_record).unwrap();
+                            offsets_read.push((m.partition(), m.offset()));
                             new_payload
                         }
                         Err(err) => {
@@ -234,9 +290,25 @@ impl PartitionStream for KafkaStreamRead {
                     RecordBatch::try_new(canonical_schema.clone(), columns).unwrap();
                 let tx_result = tx.send(Ok(timestamped_record_batch)).await;
                 match tx_result {
-                    Ok(m) => debug!("result ok {:?}", m),
+                    Ok(m) => {
+                        let _ = state_backend
+                            .put_state(
+                                &state_namespace,
+                                partition_tag.clone().into_bytes(),
+                                BatchReadMetadata {
+                                    epoch,
+                                    min_timestamp,
+                                    max_timestamp,
+                                    offsets_read,
+                                }
+                                .to_bytes()
+                                .unwrap(), //TODO: Fix the error threading.
+                            )
+                            .await;
+                    }
                     Err(err) => error!("result err {:?}", err),
                 }
+                epoch += 1;
             }
         });
         builder.build()
