@@ -21,7 +21,6 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
-use std::time::Duration;
 
 use super::dml::CopyTo;
 use super::DdlStatement;
@@ -41,7 +40,7 @@ use crate::{
     TableProviderFilterPushDown, TableSource, WindowFunctionDefinition,
 };
 
-use arrow::datatypes::{DataType, Field, Schema, SchemaBuilder, SchemaRef, TimeUnit};
+use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion_common::tree_node::{
     Transformed, TransformedResult, TreeNode, TreeNodeRecursion,
 };
@@ -280,8 +279,6 @@ pub enum LogicalPlan {
     Unnest(Unnest),
     /// A variadic query (e.g. "Recursive CTEs")
     RecursiveQuery(RecursiveQuery),
-    /// A streaming window with an aggregate and duration for continuous computations.
-    StreamingWindow(Aggregate, StreamingWindowType, StreamingWindowSchema),
 }
 
 impl LogicalPlan {
@@ -322,9 +319,6 @@ impl LogicalPlan {
             LogicalPlan::RecursiveQuery(RecursiveQuery { static_term, .. }) => {
                 // we take the schema of the static term as the schema of the entire recursive query
                 static_term.schema()
-            }
-            LogicalPlan::StreamingWindow(_, _, StreamingWindowSchema { schema }) => {
-                schema
             }
         }
     }
@@ -478,7 +472,6 @@ impl LogicalPlan {
             | LogicalPlan::EmptyRelation { .. }
             | LogicalPlan::Values { .. }
             | LogicalPlan::DescribeTable(_) => vec![],
-            LogicalPlan::StreamingWindow(Aggregate { input, .. }, ..) => vec![input],
         }
     }
 
@@ -596,13 +589,6 @@ impl LogicalPlan {
             | LogicalPlan::Ddl(_)
             | LogicalPlan::DescribeTable(_)
             | LogicalPlan::Unnest(_) => Ok(None),
-            LogicalPlan::StreamingWindow(agg, ..) => {
-                if agg.group_expr.is_empty() {
-                    Ok(Some(agg.aggr_expr.as_slice()[0].clone()))
-                } else {
-                    Ok(Some(agg.group_expr.as_slice()[0].clone()))
-                }
-            }
         }
     }
 
@@ -808,7 +794,6 @@ impl LogicalPlan {
                 // Update schema with unnested column type.
                 unnest_with_options(unwrap_arc(input), exec_columns, options)
             }
-            LogicalPlan::StreamingWindow(_, _, ..) => Ok(self),
         }
     }
 
@@ -1162,24 +1147,6 @@ impl LogicalPlan {
                     unnest_with_options(input, columns.clone(), options.clone())?;
                 Ok(new_plan)
             }
-            LogicalPlan::StreamingWindow(
-                Aggregate { group_expr, .. },
-                window_length,
-                ..,
-            ) => {
-                // group exprs are the first expressions
-                let agg_expr = expr.split_off(group_expr.len());
-
-                Aggregate::try_new(Arc::new(inputs.swap_remove(0)), expr, agg_expr).map(
-                    |new_agg_expr| {
-                        LogicalPlan::StreamingWindow(
-                            new_agg_expr.clone(),
-                            window_length.clone(),
-                            StreamingWindowSchema::try_new(new_agg_expr).unwrap(),
-                        )
-                    },
-                )
-            }
         }
     }
     /// Replaces placeholder param values (like `$1`, `$2`) in [`LogicalPlan`]
@@ -1354,22 +1321,6 @@ impl LogicalPlan {
             | LogicalPlan::Prepare(_)
             | LogicalPlan::Statement(_)
             | LogicalPlan::Extension(_) => None,
-            LogicalPlan::StreamingWindow(
-                Aggregate {
-                    input, group_expr, ..
-                },
-                ..,
-            ) => {
-                // Empty group_expr will return Some(1)
-                if group_expr
-                    .iter()
-                    .all(|expr| matches!(expr, Expr::Literal(_)))
-                {
-                    Some(1)
-                } else {
-                    input.max_rows()
-                }
-            }
         }
     }
 
@@ -1981,17 +1932,6 @@ impl LogicalPlan {
                         expr_vec_fmt!(list_type_columns),
                         expr_vec_fmt!(struct_type_columns))
                     }
-                    LogicalPlan::StreamingWindow(Aggregate {
-                        ref group_expr,
-                        ref aggr_expr,
-                        ..
-                    }, window_length, ..) => write!(
-                        f,
-                        "StreamingWindow: groupBy=[[{}]], aggr=[[{}]], window_length[{:?}]",
-                        expr_vec_fmt!(group_expr),
-                        expr_vec_fmt!(aggr_expr),
-                        window_length,
-                    ),
                 }
             }
         }
@@ -2636,46 +2576,6 @@ impl Distinct {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub enum StreamingWindowType {
-    Tumbling(Duration),
-    Sliding(Duration, Duration),
-    Session(Duration, String),
-}
-
-#[derive(Clone, PartialEq, Eq, Hash)]
-// mark non_exhaustive to encourage use of try_new/new()
-#[non_exhaustive]
-pub struct StreamingWindowSchema {
-    pub schema: DFSchemaRef,
-}
-
-impl StreamingWindowSchema {
-    pub fn try_new(aggr_expr: Aggregate) -> Result<Self> {
-        let inner_schema = aggr_expr.schema.inner().clone();
-        let fields = inner_schema.all_fields().to_owned();
-
-        let mut builder = SchemaBuilder::new();
-
-        for field in fields {
-            builder.push(field.clone());
-        }
-        builder.push(Field::new(
-            "window_start_time",
-            DataType::Timestamp(TimeUnit::Millisecond, None),
-            false,
-        ));
-        builder.push(Field::new(
-            "window_end_time",
-            DataType::Timestamp(TimeUnit::Millisecond, None),
-            false,
-        ));
-        let schema_with_window_columns = DFSchema::try_from(builder.finish())?;
-        Ok(StreamingWindowSchema {
-            schema: Arc::new(schema_with_window_columns),
-        })
-    }
-}
 /// Removes duplicate rows from the input
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct DistinctOn {

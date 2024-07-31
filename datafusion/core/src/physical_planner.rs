@@ -40,7 +40,7 @@ use crate::logical_expr::{
 };
 use crate::logical_expr::{
     Expr, LogicalPlan, Partitioning as LogicalPartitioning, PlanType, Repartition,
-    StreamingWindowType, UserDefinedLogicalNode,
+    UserDefinedLogicalNode,
 };
 use crate::logical_expr::{Limit, Values};
 use crate::physical_expr::{create_physical_expr, create_physical_exprs};
@@ -94,9 +94,6 @@ use datafusion_expr::{
 };
 use datafusion_physical_expr::expressions::Literal;
 use datafusion_physical_expr::LexOrdering;
-use datafusion_physical_plan::continuous::window::{
-    FranzStreamingWindowExec, FranzStreamingWindowType,
-};
 use datafusion_physical_plan::placeholder_row::PlaceholderRowExec;
 use datafusion_sql::utils::window_expr_common_partition_keys;
 
@@ -1451,15 +1448,21 @@ impl DefaultPhysicalPlanner {
                 // Ensure the ExecutionPlan's schema matches the
                 // declared logical schema to catch and warn about
                 // logic errors when creating user defined plans.
-                if !node.schema().matches_arrow_schema(&plan.schema()) {
-                    return plan_err!(
-                            "Extension planner for {:?} created an ExecutionPlan with mismatched schema. \
-                            LogicalPlan schema: {:?}, ExecutionPlan schema: {:?}",
-                            node, node.schema(), plan.schema()
-                        );
-                } else {
-                    plan
-                }
+                node
+                    .schema()
+                    .check_arrow_schema_type_compatible(&plan.schema())?;
+
+                plan
+
+                // if !node.schema().matches_arrow_schema(&plan.schema()) {
+                //     return plan_err!(
+                //             "Extension planner for {:?} created an ExecutionPlan with mismatched schema. \
+                //             LogicalPlan schema: {:?}, ExecutionPlan schema: {:?}",
+                //             node, node.schema(), plan.schema()
+                //         );
+                // } else {
+                //     plan
+                // }
             }
 
             // Other
@@ -1500,63 +1503,6 @@ impl DefaultPhysicalPlanner {
                 return internal_err!(
                     "Unsupported logical plan: Analyze must be root of the plan"
                 )
-            }
-            LogicalPlan::StreamingWindow(
-                Aggregate {
-                    input,
-                    group_expr,
-                    aggr_expr,
-                    ..
-                },
-                window_type,
-                window_schema,
-            ) => {
-                // Initially need to perform the aggregate and then merge the partitions
-                let input_exec = children.one()?;
-                let physical_input_schema: Arc<Schema> = input_exec.schema();
-
-                let logical_input_schema = input.as_ref().schema();
-
-                let groups = self.create_grouping_physical_expr(
-                    group_expr,
-                    logical_input_schema,
-                    &physical_input_schema,
-                    session_state,
-                )?;
-
-                let agg_filter = aggr_expr
-                    .iter()
-                    .map(|e| {
-                        create_aggregate_expr_and_maybe_filter(
-                            e,
-                            logical_input_schema,
-                            &physical_input_schema,
-                            session_state.execution_props(),
-                        )
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-
-                let (aggregates, filters, _order_bys): (Vec<_>, Vec<_>, Vec<_>) =
-                    multiunzip(agg_filter);
-                let franz_window_type = match window_type {
-                    StreamingWindowType::Tumbling(length) => {
-                        FranzStreamingWindowType::Tumbling(length.clone())
-                    }
-                    StreamingWindowType::Sliding(length, slide) => {
-                        FranzStreamingWindowType::Sliding(length.clone(), slide.clone())
-                    }
-                    StreamingWindowType::Session(length, key) => todo!(),
-                };
-                let initial_aggr = Arc::new(FranzStreamingWindowExec::try_new(
-                    AggregateMode::Partial,
-                    groups.clone(),
-                    aggregates.clone(),
-                    filters.clone(),
-                    input_exec,
-                    physical_input_schema.clone(),
-                    franz_window_type,
-                )?);
-                initial_aggr
             }
         };
         Ok(exec_node)

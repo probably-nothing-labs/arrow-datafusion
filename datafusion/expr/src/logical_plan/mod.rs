@@ -24,9 +24,6 @@ mod plan;
 mod statement;
 pub mod tree_node;
 
-#[cfg(feature = "franz")]
-mod franz;
-
 pub use builder::{
     build_join_schema, table_scan, union, wrap_projection_for_join_if_necessary,
     LogicalPlanBuilder, UNNAMED_TABLE,
@@ -41,9 +38,8 @@ pub use plan::{
     projection_schema, Aggregate, Analyze, CrossJoin, DescribeTable, Distinct,
     DistinctOn, EmptyRelation, Explain, Extension, Filter, Join, JoinConstraint,
     JoinType, Limit, LogicalPlan, Partitioning, PlanType, Prepare, Projection,
-    RecursiveQuery, Repartition, Sort, StreamingWindowSchema, StreamingWindowType,
-    StringifiedPlan, Subquery, SubqueryAlias, TableScan, ToStringifiedPlan, Union,
-    Unnest, Values, Window,
+    RecursiveQuery, Repartition, Sort, StringifiedPlan, Subquery, SubqueryAlias,
+    TableScan, ToStringifiedPlan, Union, Unnest, Values, Window,
 };
 pub use statement::{
     SetVariable, Statement, TransactionAccessMode, TransactionConclusion, TransactionEnd,

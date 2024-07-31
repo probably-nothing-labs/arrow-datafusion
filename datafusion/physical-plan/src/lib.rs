@@ -48,14 +48,12 @@ pub mod analyze;
 pub mod coalesce_batches;
 pub mod coalesce_partitions;
 pub mod common;
-pub mod continuous;
 pub mod display;
 pub mod empty;
 pub mod explain;
 pub mod filter;
 pub mod insert;
 pub mod joins;
-pub mod kafka_source;
 pub mod limit;
 pub mod memory;
 pub mod metrics;
@@ -66,7 +64,6 @@ pub mod repartition;
 pub mod sorts;
 pub mod stream;
 pub mod streaming;
-pub mod time;
 pub mod tree_node;
 pub mod union;
 pub mod unnest;
@@ -640,7 +637,7 @@ impl PlanProperties {
     }
 
     /// Get schema of the node.
-    fn schema(&self) -> &SchemaRef {
+    pub fn schema(&self) -> &SchemaRef {
         self.eq_properties.schema()
     }
 }

@@ -33,8 +33,6 @@ use datafusion_common::tree_node::{TreeNodeRecursion, TreeNodeVisitor};
 use datafusion_common::{Column, DataFusionError};
 use serde_json::json;
 
-use super::plan::StreamingWindowType;
-
 /// Formats plans with a single line per node. For example:
 ///
 /// Projection: id
@@ -661,22 +659,6 @@ impl<'a, 'b> PgJsonVisitor<'a, 'b> {
                     "StructColumn": expr_vec_fmt!(struct_type_columns),
                 })
             }
-            LogicalPlan::StreamingWindow(
-                Aggregate {
-                    ref group_expr,
-                    ref aggr_expr,
-                    ..
-                },
-                window,
-                ..,
-            ) => {
-                json!({
-                    "Node Type": "StreamingWindow",
-                    "Group By": expr_vec_fmt!(group_expr),
-                    "Aggregates": expr_vec_fmt!(aggr_expr),
-                    "Window": display_franz_window(window),
-                })
-            }
         }
     }
 }
@@ -743,21 +725,6 @@ impl<'n, 'a, 'b> TreeNodeVisitor<'n> for PgJsonVisitor<'a, 'b> {
         }
 
         Ok(TreeNodeRecursion::Continue)
-    }
-}
-
-fn display_franz_window(window: &StreamingWindowType) -> String {
-    match window {
-        StreamingWindowType::Tumbling(length) => {
-            format!("Tumbling Window[Window Length={:?}]", length)
-        }
-        StreamingWindowType::Sliding(length, slide) => format!(
-            "Sliding Window[Window Length={:?}, Slide={:?}]",
-            length, slide
-        ),
-        StreamingWindowType::Session(length, key) => {
-            format!("Session Window[Window Length={:?}, Key={}]", length, key)
-        }
     }
 }
 

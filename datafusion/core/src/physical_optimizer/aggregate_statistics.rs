@@ -379,7 +379,7 @@ pub(crate) mod tests {
             Self::CountStar
         }
 
-        pub fn new_count_column(schema: &Arc<Schema>) -> Self {
+        fn new_count_column(schema: &Arc<Schema>) -> Self {
             Self::ColumnA(schema.clone())
         }
 
