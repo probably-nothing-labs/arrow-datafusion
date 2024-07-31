@@ -44,7 +44,7 @@ use crate::eliminate_one_union::EliminateOneUnion;
 use crate::eliminate_outer_join::EliminateOuterJoin;
 use crate::extract_equijoin_predicate::ExtractEquijoinPredicate;
 use crate::filter_null_join_keys::FilterNullJoinKeys;
-//use crate::optimize_projections::OptimizeProjections;
+use crate::optimize_projections::OptimizeProjections;
 use crate::plan_signature::LogicalPlanSignature;
 use crate::propagate_empty_relation::PropagateEmptyRelation;
 use crate::push_down_filter::PushDownFilter;
@@ -269,7 +269,7 @@ impl Optimizer {
             Arc::new(UnwrapCastInComparison::new()),
             Arc::new(CommonSubexprEliminate::new()),
             Arc::new(EliminateGroupByConstant::new()),
-            //Arc::new(OptimizeProjections::new()),
+            Arc::new(OptimizeProjections::new()),
         ];
 
         Self::with_rules(rules)
