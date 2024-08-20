@@ -1184,7 +1184,7 @@ impl DefaultPhysicalPlanner {
                             node, node.schema(), plan.schema()
                         );
                 } else {
-                    println!("plan extensions passed with flying colours");
+                    debug!("LogicalPlan schema and ExtensionPlan schemas matched!");
                     plan
                 }
             }
