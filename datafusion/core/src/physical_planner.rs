@@ -1171,21 +1171,22 @@ impl DefaultPhysicalPlanner {
                 // Ensure the ExecutionPlan's schema matches the
                 // declared logical schema to catch and warn about
                 // logic errors when creating user defined plans.
-                node
-                    .schema()
-                    .check_arrow_schema_type_compatible(&plan.schema())?;
+                // node
+                //     .schema()
+                //     .check_arrow_schema_type_compatible(&plan.schema())?;
 
-                plan
+                // plan
 
-                // if !node.schema().matches_arrow_schema(&plan.schema()) {
-                //     return plan_err!(
-                //             "Extension planner for {:?} created an ExecutionPlan with mismatched schema. \
-                //             LogicalPlan schema: {:?}, ExecutionPlan schema: {:?}",
-                //             node, node.schema(), plan.schema()
-                //         );
-                // } else {
-                //     plan
-                // }
+                if !node.schema().matches_arrow_schema(&plan.schema()) {
+                    return plan_err!(
+                            "Extension planner for {:?} created an ExecutionPlan with mismatched schema. \
+                            LogicalPlan schema: {:?}, ExecutionPlan schema: {:?}",
+                            node, node.schema(), plan.schema()
+                        );
+                } else {
+                    println!("plan extensions passed with flying colours");
+                    plan
+                }
             }
 
             // Other
