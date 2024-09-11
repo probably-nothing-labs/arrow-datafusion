@@ -455,7 +455,9 @@ pub trait ExecutionPlanProperties {
     fn equivalence_properties(&self) -> &EquivalenceProperties;
 
     // Node Id of this ExecutionPlan node. See also [`ExecutionPlan::with_node_id`]
-    fn node_id(&self) -> Option<usize>;
+    fn node_id(&self) -> Option<usize> {
+        None
+    }
 }
 
 impl ExecutionPlanProperties for Arc<dyn ExecutionPlan> {
