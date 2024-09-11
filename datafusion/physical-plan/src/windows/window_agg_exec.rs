@@ -22,7 +22,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use super::utils::create_schema;
 use crate::expressions::PhysicalSortExpr;
 use crate::metrics::{BaselineMetrics, ExecutionPlanMetricsSet, MetricsSet};
 use crate::windows::{
@@ -45,6 +44,8 @@ use datafusion_common::{internal_err, Result};
 use datafusion_execution::TaskContext;
 use datafusion_physical_expr_common::sort_expr::LexRequirement;
 use futures::{ready, Stream, StreamExt};
+
+use super::bounded_window_agg_exec::create_schema;
 
 /// Window execution plan
 #[derive(Debug)]
@@ -261,6 +262,20 @@ impl ExecutionPlan for WindowAggExec {
             column_statistics,
             total_byte_size: Precision::Absent,
         })
+    }
+
+    fn with_node_id(
+        self: Arc<Self>,
+        _node_id: usize,
+    ) -> Result<Option<Arc<dyn ExecutionPlan>>> {
+        let mut new_plan = WindowAggExec::try_new(
+            self.window_expr.clone(),
+            self.input.clone(),
+            self.partition_keys.clone(),
+        )?;
+        let new_props = new_plan.cache.clone().with_node_id(_node_id);
+        new_plan.cache = new_props;
+        Ok(Some(Arc::new(new_plan)))
     }
 }
 
